@@ -9,6 +9,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
+  'https://construpreco-marketplace.vercel.app',
   process.env.MARKETPLACE_URL,
   process.env.DRIVER_APP_URL
 ].filter(Boolean);
