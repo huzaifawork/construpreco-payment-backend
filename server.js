@@ -10,6 +10,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'https://construpreco-marketplace.vercel.app',
+  'https://construpreco-marketplace-ruddy.vercel.app',
   process.env.MARKETPLACE_URL,
   process.env.DRIVER_APP_URL
 ].filter(Boolean);
@@ -22,7 +23,9 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
