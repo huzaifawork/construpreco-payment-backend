@@ -7,7 +7,9 @@ const app = express();
 
 // Eupago Configuration
 const EUPAGO_API_KEY = process.env.EUPAGO_API_KEY;
-const EUPAGO_BASE_URL = 'https://clientes.eupago.pt/api';
+const EUPAGO_BASE_URL = process.env.EUPAGO_SANDBOX === 'true' 
+  ? 'https://sandbox.eupago.pt/api/v1.02'
+  : 'https://eupago.pt/api/v1.02';
 
 // Configure CORS for production
 const allowedOrigins = [
