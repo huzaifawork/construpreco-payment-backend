@@ -1,9 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const axios = require('axios');
 
 const app = express();
+
+// Eupago Configuration
+const EUPAGO_API_KEY = process.env.EUPAGO_API_KEY;
+const EUPAGO_BASE_URL = 'https://clientes.eupago.pt/api';
 
 // Configure CORS for production
 const allowedOrigins = [
@@ -12,7 +16,8 @@ const allowedOrigins = [
   'https://construpreco-marketplace.vercel.app',
   'https://construpreco-marketplace-ruddy.vercel.app',
   process.env.MARKETPLACE_URL,
-  process.env.DRIVER_APP_URL
+  process.env.DRIVER_APP_URL,
+  process.env.CLIENT_FRONTEND_URL
 ].filter(Boolean);
 
 app.use(cors({
@@ -34,10 +39,13 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.json({ 
     status: 'ok', 
-    message: 'ConstruPreço Payment API',
+    message: 'ConstruPreço Payment API - Eupago',
     endpoints: {
-      createPayment: 'POST /api/create-payment-intent',
-      verifyPayment: 'POST /api/verify-payment'
+      mbway: 'POST /api/eupago/mbway',
+      multibanco: 'POST /api/eupago/multibanco',
+      card: 'POST /api/eupago/card',
+      checkPayment: 'POST /api/eupago/check-payment',
+      webhook: 'POST /api/eupago/webhook'
     }
   });
 });
@@ -46,47 +54,106 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
-// Create payment intent
-app.post('/api/create-payment-intent', async (req, res) => {
+// ============ EUPAGO ENDPOINTS ============
+
+// Create MB Way payment
+app.post('/api/eupago/mbway', async (req, res) => {
   try {
-    const { amount, currency = 'eur' } = req.body;
+    const { amount, phone, orderId } = req.body;
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
-    }
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Convert to cents
-      currency,
-      payment_method_types: ['card'],
-      metadata: {
-        integration_check: 'accept_a_payment',
-      },
+    const response = await axios.post(`${EUPAGO_BASE_URL}/mbway/create`, {
+      chave: EUPAGO_API_KEY,
+      valor: amount,
+      id: orderId,
+      alias: phone,
+      descricao: `Pedido ${orderId}`
     });
 
-    res.json({
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id
-    });
+    res.json(response.data);
   } catch (error) {
-    console.error('Error creating payment intent:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Eupago MB Way error:', error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data || error.message });
   }
 });
 
-// Verify payment status
-app.post('/api/verify-payment', async (req, res) => {
+// Create Multibanco reference
+app.post('/api/eupago/multibanco', async (req, res) => {
   try {
-    const { paymentIntentId } = req.body;
+    const { amount, orderId } = req.body;
 
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-
-    res.json({
-      status: paymentIntent.status,
-      amount: paymentIntent.amount / 100
+    const response = await axios.post(`${EUPAGO_BASE_URL}/multibanco/create`, {
+      chave: EUPAGO_API_KEY,
+      valor: amount,
+      id: orderId,
+      descricao: `Pedido ${orderId}`
     });
+
+    res.json(response.data);
   } catch (error) {
-    console.error('Error verifying payment:', error);
+    console.error('Eupago Multibanco error:', error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data || error.message });
+  }
+});
+
+// Check payment status
+app.post('/api/eupago/check-payment', async (req, res) => {
+  try {
+    const { referencia, tipo } = req.body; // tipo: 'mbway' or 'multibanco'
+
+    const response = await axios.post(`${EUPAGO_BASE_URL}/${tipo}/info`, {
+      chave: EUPAGO_API_KEY,
+      referencia
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Eupago check payment error:', error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data || error.message });
+  }
+});
+
+// Create credit card payment
+app.post('/api/eupago/card', async (req, res) => {
+  try {
+    const { amount, orderId, successUrl, failUrl } = req.body;
+
+    const response = await axios.post(`${EUPAGO_BASE_URL}/creditcard/create`, {
+      chave: EUPAGO_API_KEY,
+      valor: amount,
+      id: orderId,
+      successUrl: successUrl || `${process.env.MARKETPLACE_URL}/payment-success`,
+      failUrl: failUrl || `${process.env.MARKETPLACE_URL}/payment-failed`
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Eupago Card error:', error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data || error.message });
+  }
+});
+
+// Eupago webhook for payment notifications
+app.post('/api/eupago/webhook', async (req, res) => {
+  try {
+    const { referencia, valor, estado, identificador, chave } = req.body;
+    
+    console.log('Eupago webhook received:', req.body);
+    
+    // Verify the webhook is from Eupago
+    if (chave !== EUPAGO_API_KEY) {
+      console.error('Unauthorized webhook attempt');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    // Log payment confirmation
+    if (estado === 'pago' || estado === 'success') {
+      console.log(`✅ Payment confirmed - Reference: ${referencia}, Amount: €${valor}`);
+      // TODO: Update order status in database
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Webhook error:', error);
     res.status(500).json({ error: error.message });
   }
 });
