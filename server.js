@@ -43,7 +43,7 @@ app.get('/', (req, res) => {
     endpoints: {
       mbway: 'POST /api/eupago/mbway',
       multibanco: 'POST /api/eupago/multibanco',
-      card: 'POST /api/eupago/card',
+      payshop: 'POST /api/eupago/payshop',
       checkPayment: 'POST /api/eupago/check-payment',
       webhook: 'POST /api/eupago/webhook'
     }
@@ -95,10 +95,29 @@ app.post('/api/eupago/multibanco', async (req, res) => {
   }
 });
 
+// Create PayShop reference
+app.post('/api/eupago/payshop', async (req, res) => {
+  try {
+    const { amount, orderId } = req.body;
+
+    const response = await axios.post(`${EUPAGO_BASE_URL}/payshop/create`, {
+      chave: EUPAGO_API_KEY,
+      valor: amount,
+      id: orderId,
+      descricao: `Pedido ${orderId}`
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Eupago PayShop error:', error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data || error.message });
+  }
+});
+
 // Check payment status
 app.post('/api/eupago/check-payment', async (req, res) => {
   try {
-    const { referencia, tipo } = req.body; // tipo: 'mbway' or 'multibanco'
+    const { referencia, tipo } = req.body; // tipo: 'mbway', 'multibanco', or 'payshop'
 
     const response = await axios.post(`${EUPAGO_BASE_URL}/${tipo}/info`, {
       chave: EUPAGO_API_KEY,
@@ -112,25 +131,7 @@ app.post('/api/eupago/check-payment', async (req, res) => {
   }
 });
 
-// Create credit card payment
-app.post('/api/eupago/card', async (req, res) => {
-  try {
-    const { amount, orderId, successUrl, failUrl } = req.body;
 
-    const response = await axios.post(`${EUPAGO_BASE_URL}/creditcard/create`, {
-      chave: EUPAGO_API_KEY,
-      valor: amount,
-      id: orderId,
-      successUrl: successUrl || `${process.env.MARKETPLACE_URL}/payment-success`,
-      failUrl: failUrl || `${process.env.MARKETPLACE_URL}/payment-failed`
-    });
-
-    res.json(response.data);
-  } catch (error) {
-    console.error('Eupago Card error:', error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data || error.message });
-  }
-});
 
 // Eupago webhook for payment notifications
 app.post('/api/eupago/webhook', async (req, res) => {
